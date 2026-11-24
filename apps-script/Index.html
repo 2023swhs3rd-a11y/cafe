@@ -172,7 +172,13 @@ footer button { font: inherit; background: none; border: 0; color: var(--muted);
 .door canvas { display: block; image-rendering: pixelated; image-rendering: crisp-edges; }
 .door .dt { position: absolute; transform: translate(-50%, -50%); white-space: nowrap; pointer-events: none; line-height: 1; }
 .dsign { color: #5b2a1e; font-size: calc(var(--s) * 7px); letter-spacing: .12em; }
-.dsign small { font-size: .6em; color: #a8643c; margin-right: .4em; letter-spacing: 0; }
+.dsign small { font-size: .5em; color: #a8643c; margin-left: .6em; letter-spacing: .05em; }
+.dwin { color: #8a4a2a; font-size: calc(var(--s) * 3.4px); letter-spacing: .15em; }
+.dflag { color: #fff; font-size: calc(var(--s) * 3.4px); text-align: center; line-height: 1.12 !important; }
+#dFlag2 { font-size: calc(var(--s) * 5.2px); line-height: 1.3 !important; }
+.dhint { font-size: 11px; color: var(--ink); background: var(--gold); border: 2px solid var(--ink); padding: 0 6px; line-height: 1.5 !important; transform: translate(-50%, -100%); animation: dh .8s steps(2) infinite; }
+@keyframes dh { 50% { margin-top: -2px; } }
+.dhint[hidden] { display: none; }
 .dboard { color: #5b2a1e; font-size: calc(var(--s) * 3.3px); text-align: center; line-height: 1.35 !important; }
 .dboard b { color: #c0392b; font-weight: 400; font-size: 1.3em; }
 .dvert { color: #c0392b; font-size: calc(var(--s) * 4.8px); text-align: center; line-height: 1.5 !important; }
@@ -218,7 +224,12 @@ footer button { font: inherit; background: none; border: 0; color: var(--muted);
       <div class="ov" id="ov"></div>
       <div class="door" id="door">
         <canvas id="dcv" aria-hidden="true"></canvas>
-        <div class="dt dsign" id="dSign"><small>喫茶</small>진로카페</div>
+        <div class="dt dsign" id="dSign">진로카페<small>COFFEE · TEA</small></div>
+        <div class="dt dwin" id="dWin1">COFFEE</div>
+        <div class="dt dwin" id="dWin2">&amp; DESSERT</div>
+        <div class="dt dflag" id="dFlag1">C<br>O<br>F<br>F<br>E<br>E</div>
+        <div class="dt dflag" id="dFlag2">커<br>피</div>
+        <div class="dt dhint" id="dHint" hidden>Enter ▶ 들어가기</div>
         <div class="dt dboard" id="dBoard"><b>珈琲</b><br>COFFEE</div>
         <div class="dt dvert" id="dVert">珈<br>琲</div>
         <div class="lock" id="lock" role="group" aria-label="카페 도어락. 암호 네 자리를 눌러 주세요.">
@@ -281,7 +292,7 @@ function api(fn) {
     throw e;
   });
 }
-var D = { on: true, phase: 'idle', code: '', open: 0, walk: 0, bell: 0 }; // 입구 상태
+var D = { on: true, phase: 'idle', code: '', open: 0, walk: 0, bell: 0, keys: {}, mx: null, my: 0, dir: 'right' }; // 입구 상태
 var S = { code: '', data: null, day: null, slot: null, menu: null, admin: null, lastName: '' };
 try { S.lastName = localStorage.getItem('jinro.name') || ''; } catch (e) {}
 var $ = function (id) { return document.getElementById(id); };
@@ -1284,9 +1295,10 @@ function doorGeo() {
   var tall = L === LAYOUTS.tall;
   return tall
     ? { tall: true, G: 92, fy: 2, fx0: 12, fx1: 180, dcx: 96, sign: 10, awn: 24, win: [[18, 40, 48, 22], [126, 40, 48, 22]], kanban: [54, 94], terrace: 2, bench: [148, 106], road: 118, pole: false }
-    : { tall: false, G: 134, fy: 12, fx0: 34, fx1: 228, dcx: 136, sign: 44, awn: 58, win: [[44, 70, 60, 30], [168, 70, 52, 30]], kanban: [104, 136], terrace: 14, bench: [236, 146], road: 168, pole: true };
+    : { tall: false, G: 128, fy: 10, fx0: 34, fx1: 228, dcx: 136, sign: 38, awn: 52, win: [[44, 63, 60, 27], [168, 63, 52, 27]], kanban: [100, 130], terrace: 16, bench: [244, 150], road: 160, pole: true };
 }
 var STREET_CAT = { x: -20, dir: 1, wait: 0 };
+var WALKER = { on: false, x: 0, dir: 1, who: 2, wait: 3 }, CAR = { on: false, x: 0, dir: -1, col: '#3f7dd8', wait: 6 };
 function drawDoor(dt) {
   if (!dcv) return; // 첫 프레임은 입구 준비 전
   if (dcv.width !== L.W || dcv.height !== L.H) {
@@ -1311,6 +1323,14 @@ function drawDoor(dt) {
     R(14, 0, 4, G, '#6b5a4a'); R(8, 10, 16, 2, '#5b4a3a'); R(10, 18, 12, 2, '#5b4a3a'); R(12, 26, 6, 5, '#7a7f8e');
     g.fillStyle = '#3a3346';
     for (x = 18; x < W; x++) { var sag = Math.sin((x - 18) / (W - 18) * Math.PI); R(x, 11 + sag * 8, 1, 0.6, '#3a3346'); R(x, 19 + sag * 6, 1, 0.6, '#3a3346'); }
+    // 왼쪽 이웃: 초록 차양 책방 + 음료 자판기
+    R(0, G - 40, o.fx0 - 6, 6, '#2f6a4f'); for (x = 0; x < o.fx0 - 6; x += 4) R(x, G - 34, 2, 1.5, '#2f6a4f');
+    R(0, G - 33, o.fx0 - 6, 33, '#e9dcc4'); R(2, G - 30, o.fx0 - 18, 16, lit ? '#ffe2b0' : '#cfe0ea');
+    for (i = 0; i < 4; i++) R(3 + i * 3, G - 22, 2, 8, ['#e0475a', '#3f7dd8', '#ffd36b', '#4a9a5c'][i]);
+    R(1, G - 26, 12, 26, '#c0392b'); R(1, G - 26, 12, 1, '#e0475a'); R(2, G - 24, 10, 9, '#f4f9ff');
+    for (i = 0; i < 6; i++) R(2.5 + (i % 3) * 3.2, G - 23 + Math.floor(i / 3) * 4.5, 2, 3, ['#e0475a', '#3f7dd8', '#4a9a5c', '#ffd36b', '#8a5232', '#ffffff'][i]);
+    R(2, G - 13, 10, 2, '#2b1d2e'); R(4, G - 9, 6, 3, '#7a2018'); R(10, G - 9, 1.5, 1.5, (T >> 3) % 2 ? '#6fe08a' : '#2f6a4f');
+    if (lit) { g.globalAlpha = 0.2; R(-2, G - 30, 18, 32, '#f4f9ff'); g.globalAlpha = 1; }
     var bx0 = 70 + ((T >> 4) % 3) * 2; R(bx0, 18.5, 3, 2, '#2b1d2e'); R(bx0 + 2, 17.5, 2, 1.5, '#2b1d2e'); R(bx0 + 3.5, 18, 1, 0.5, '#ffd36b'); // 참새
   }
 
@@ -1357,12 +1377,12 @@ function drawDoor(dt) {
     var wx = w[0], wy = w[1], ww = w[2], wh = w[3];
     R(wx - 3, wy - 3, ww + 6, wh + 6, '#3a2420'); R(wx - 2, wy - 2, ww + 4, 1, '#7b5642');
     R(wx, wy, ww, wh, warm);
-    var sg = o.tall ? 6 : 9; // 스테인드글라스 높이
+    var sg = o.tall ? 6 : 8; // 스테인드글라스 높이
     for (var k = 0; k < 2; k++) {
       var sp = personSprite(GUESTS[(wi * 3 + k * 5) % GUESTS.length], k ? 'left' : 'right', ((T + k * 13 + wi * 29) % 90) < 3);
-      g.drawImage(sp, 0, 0, SPR_W, 16, Math.round(wx + ww * (k ? 0.58 : 0.12)), Math.round(wy + sg - (o.tall ? 4 : 1)), SPR_W, 16);
+      g.drawImage(sp, 0, 0, SPR_W, 16, Math.round(wx + ww * (k ? 0.58 : 0.12)), Math.round(wy + sg - 5), SPR_W, 16);
     }
-    for (x = wx; x < wx + ww; x += 6) for (y = wy; y < wy + sg; y += 3) R(x, y, Math.min(5, wx + ww - x), 2, [amber, '#e08a3a', '#c9a24a', '#e9c46a'][((x / 6 | 0) + (y / 3 | 0)) % 4]);
+    for (x = wx; x < wx + ww; x += 6) for (y = wy; y < wy + sg; y += 3) R(x, y, Math.min(5, wx + ww - x), Math.min(2, wy + sg - y), [amber, '#e08a3a', '#c9a24a', '#e9c46a'][((x / 6 | 0) + (y / 3 | 0)) % 4]);
     R(wx, wy + sg, ww, 1, '#3a2420');
     var cy = wy + wh - (o.tall ? 5 : 7); // 레이스 반커튼
     R(wx, cy, ww, wy + wh - cy, '#fffaf0'); for (x = wx; x < wx + ww; x += 4) { R(x + 1, cy - 1, 2, 1, '#fffaf0'); R(x + 2, cy + 2, 1, 1, '#e6dccb'); }
@@ -1435,7 +1455,8 @@ function drawDoor(dt) {
   for (y = G + 2; y < o.road; y += 8) for (x = (y / 8 | 0) % 2 ? 0 : 6; x < W; x += 12) R(x, y, 11, 7, '#c8c2b6');
   R(0, G, W, 1.5, '#8a8478'); R(o.dcx - 20, G, 40, 3, '#7a2f24'); R(o.dcx - 18, G, 36, 2, '#a24a3a');
   R(0, o.road, W, 2, '#8a8478'); R(0, o.road + 2, W, H - o.road - 2, '#55525e');
-  for (x = ((T * 0) % 24); x < W; x += 24) R(x, o.road + (H - o.road) / 2 + 1, 12, 1, '#d8d2c4');
+  for (x = 0; x < W; x += 24) R(x, o.road + (H - o.road) / 2 + 1, 12, 1, '#d8d2c4');
+  if (!o.tall) for (x = 256; x < 300; x += 7) R(x, o.road + 3, 4, H - o.road - 4, '#e9e4d8'); // 횡단보도
 
   // 문 옆 화분(키 큰 관엽 + 작은 화분)
   plant(dx - 20, G - 16); plant(dx + dw + 5, G - 16);
@@ -1444,6 +1465,22 @@ function drawDoor(dt) {
     [cx2 - 7, cx2 + 7].forEach(function (wx2) { g.beginPath(); g.arc(wx2, cy2 - 5, 4.5, 0, 7); g.stroke(); });
     R(cx2 - 7, cy2 - 6, 14, 1, '#e0475a'); R(cx2 - 2, cy2 - 11, 1, 6, '#e0475a'); R(cx2 - 4, cy2 - 12, 5, 1, '#3a2420'); R(cx2 + 6, cy2 - 12, 1, 6, '#e0475a'); R(cx2 + 4, cy2 - 13, 5, 1, '#3a3346');
     R(cx2 + 4, cy2 - 11, 5, 3, '#c9b28a'); // 바구니
+  }
+
+  /* 노보리 깃발 · 우체통 · 맨홀 · 화단 (넓은 화면) */
+  if (!o.tall) {
+    [[58, '#c0392b'], [214, '#2f6a4f']].forEach(function (f, fi) {
+      var fx = f[0], wv = Math.round(Math.sin(T / 5 + fi) * 0.6);
+      R(fx, G - 38, 1, 38, '#8a8478'); R(fx + 1, G - 37, 8, 1, '#8a8478');
+      R(fx + 1, G - 36 + wv * 0, 8 + wv, 26, f[1]); R(fx + 1, G - 36, 8 + wv, 2, '#ffffff'); R(fx + 1, G - 12, 8 + wv, 2, '#ffffff');
+    });
+    // 빨간 우체통
+    R(232, G - 18, 10, 18, '#c0392b'); R(233, G - 20, 8, 2, '#c0392b'); R(232, G - 18, 10, 1, '#e0475a'); R(234, G - 14, 6, 1.5, '#2b1d2e'); R(234, G - 9, 6, 4, '#fff8e6'); R(231, G, 12, 1, '#7a2018');
+    // 꽃집 양동이
+    [[245, '#ff8fa3'], [251, '#ffd36b']].forEach(function (b) { R(b[0], G - 6, 5, 6, '#8a9cc8'); R(b[0] - 1, G - 10, 7, 4, '#5aa553'); R(b[0], G - 11, 2, 2, b[1]); R(b[0] + 3, G - 10, 2, 2, b[1]); });
+    // 맨홀·배수구
+    R(174, G + 18, 12, 5, '#8a8478'); R(175, G + 19, 10, 3, '#9b958a'); for (x = 176; x < 184; x += 2) R(x, G + 19.5, 1, 2, '#7a756b');
+    R(118, o.road - 3, 10, 2, '#6b665c');
   }
 
   /* 전광 스탠드 간판 (珈琲 · COFFEE) */
@@ -1495,18 +1532,68 @@ function drawDoor(dt) {
     if (lit) { g.globalAlpha = 0.22; R(286, G - 76, 22, 18, '#ffe9a8'); g.globalAlpha = 1; }
   }
 
-  /* 나: 문 앞에 서 있다가, 열리면 걸어 들어간다 */
-  var w2 = D.walk, me = personSprite(ME, 'up', false, D.phase === 'walk' && !reduceMotion ? ((T >> 1) % 2 ? 'a' : 'b') : 'idle');
-  var my = G + (o.tall ? 12 : 14) - w2 * 16;
+  /* 지나가는 차 */
+  if (CAR.on) {
+    CAR.x += CAR.dir * 46 * dt; if (CAR.x < -40 || CAR.x > W + 40) { CAR.on = false; CAR.wait = 10 + Math.random() * 12; }
+    var cyc = o.road + (o.tall ? 3 : 4), ccx2 = Math.round(CAR.x);
+    R(ccx2 - 15, cyc + 2, 30, 7, CAR.col); R(ccx2 - 9, cyc - 3, 17, 6, CAR.col); R(ccx2 - 7, cyc - 2, 6, 4, '#bfe6f5'); R(ccx2 + 0, cyc - 2, 6, 4, '#bfe6f5');
+    R(ccx2 - 15, cyc + 2, 30, 1, 'rgba(255,255,255,.35)'); R(ccx2 - 11, cyc + 8, 5, 3, '#2b1d2e'); R(ccx2 + 6, cyc + 8, 5, 3, '#2b1d2e');
+    R(CAR.dir < 0 ? ccx2 - 16 : ccx2 + 14, cyc + 4, 2, 2, lit ? '#ffe9a8' : '#fff8e6');
+  } else if ((CAR.wait -= dt) <= 0) { CAR.on = true; CAR.dir = Math.random() < 0.5 ? -1 : 1; CAR.x = CAR.dir < 0 ? W + 30 : -30; CAR.col = pick(['#3f7dd8', '#e0475a', '#ffd36b', '#f4f1de', '#4a9a5c']); }
+  /* 지나가는 사람 */
+  if (WALKER.on) {
+    WALKER.x += WALKER.dir * 18 * dt; if (WALKER.x < -16 || WALKER.x > W + 16) { WALKER.on = false; WALKER.wait = 6 + Math.random() * 10; }
+    var wsp = personSprite(GUESTS[WALKER.who], WALKER.dir > 0 ? 'right' : 'left', ((T + 5) % 70) < 3, (T >> 1) % 2 ? 'a' : 'b'), wy2 = o.road - 2;
+    R(WALKER.x - 5, wy2 - 1, 10, 2, C.shadow); g.drawImage(wsp, Math.round(WALKER.x - SPR_W / 2), Math.round(wy2 - wsp.foot + 1));
+  } else if ((WALKER.wait -= dt) <= 0) { WALKER.on = true; WALKER.dir = Math.random() < 0.5 ? -1 : 1; WALKER.x = WALKER.dir < 0 ? W + 12 : -12; WALKER.who = Math.floor(Math.random() * GUESTS.length); }
+
+  /* 나: 거리를 걸어 다니다가 문 앞으로 가면 들어간다 */
+  streetMove(dt, o);
+  var w2 = D.walk, moving = D.moving || D.phase === 'walk';
+  var me = personSprite(ME, D.phase === 'walk' ? 'up' : D.dir, false, moving && !reduceMotion ? ((T >> 1) % 2 ? 'a' : 'b') : 'idle');
   if (w2 < 1) {
     if (w2 > 0.55) g.globalAlpha = Math.max(0, 1 - (w2 - 0.55) / 0.45);
-    R(o.dcx - 5, my - 1, 10, 2, C.shadow);
-    g.drawImage(me, Math.round(o.dcx - SPR_W / 2), Math.round(my - me.foot + 1));
+    R(D.mx - 5, D.my - 1, 10, 2, C.shadow);
+    g.drawImage(me, Math.round(D.mx - SPR_W / 2), Math.round(D.my - me.foot + 1));
     g.globalAlpha = 1;
   }
   useCtx(old);
   var ps = function (el, px2, py2) { el.style.left = (px2 * scale) + 'px'; el.style.top = (py2 * scale) + 'px'; };
   ps($('dSign'), o.dcx, sy + 6.2); ps($('dBoard'), kx, ky + kh / 2); ps($('dVert'), vx + 3.5, vy + 17);
+  var w0 = o.win[0], w1 = o.win[1], cut = o.tall ? 2.5 : 3.5;
+  ps($('dWin1'), w0[0] + w0[2] / 2, w0[1] + w0[3] - cut); ps($('dWin2'), w1[0] + w1[2] / 2, w1[1] + w1[3] - cut);
+  $('dFlag1').hidden = $('dFlag2').hidden = o.tall;
+  if (!o.tall) { ps($('dFlag1'), 63, G - 23); ps($('dFlag2'), 219, G - 23); }
+  ps($('dHint'), D.mx, D.my - 30); $('dHint').hidden = !(D.phase === 'idle' && D.near);
+}
+function clampN(v, a, b) { return Math.max(a, Math.min(b, v)); }
+function streetMove(dt, o) {
+  var G = o.G, minY = G + 3, maxY = o.road - 3;
+  if (D.mx == null || D.layout !== L) { D.layout = L; D.mx = o.dcx - (o.tall ? 40 : 58); D.my = G + (o.tall ? 14 : 18); D.dir = 'right'; D.target = null; }
+  if (D.phase === 'walk' || D.phase === 'fade') {
+    var k1 = Math.min(1, D.walk * 2);
+    D.mx = D.sx + (o.dcx - D.sx) * k1; D.my = D.sy + (G - 2 - D.sy) * D.walk; D.dir = 'up'; return;
+  }
+  if (D.phase !== 'idle') { D.moving = false; return; }
+  var dx = 0, dy = 0, k = D.keys;
+  if (k.left) dx--; if (k.right) dx++; if (k.up) dy--; if (k.down) dy++;
+  if (dx || dy) D.target = null;
+  else if (D.target) { var tx = D.target.x - D.mx, ty = D.target.y - D.my, dd = Math.hypot(tx, ty); if (dd < 1.5) D.target = null; else { dx = tx / dd; dy = ty / dd; } }
+  if (dx || dy) {
+    var n = Math.hypot(dx, dy), sp = 42 * dt, doorLane = Math.abs(D.mx - o.dcx) < 10;
+    D.mx = clampN(D.mx + dx / n * sp, 6, L.W - 6);
+    D.my = clampN(D.my + dy / n * sp, doorLane ? G + 1 : minY, maxY);
+    D.dir = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up'); D.moving = true;
+  } else D.moving = false;
+  D.near = Math.abs(D.mx - o.dcx) < 24 && D.my <= G + 16;
+  var atDoor = Math.abs(D.mx - o.dcx) < 9 && D.my <= G + 5;
+  if (atDoor && !D.atDoor) { D.atDoor = true; enterAtDoor(); } else if (!atDoor) D.atDoor = false;
+}
+function enterAtDoor() {
+  if (D.busy || D.phase !== 'idle') return;
+  if (D.free) { openDoor('', '문이 열려 있어요. 어서 와요!'); return; }
+  if (D.code.length === 4) tryCode(D.code);
+  else { lockMsg('도어락에 암호 네 자리를 먼저 눌러요', 'err'); say('…암호부터요. 네 자리.', '도어락'); }
 }
 function lockShow() {
   var dots = $('lkDisp').children;
@@ -1517,15 +1604,16 @@ function press(k) {
   if (!D.on || D.phase !== 'idle' || D.busy) return;
   var btn = $('lkPad').querySelector('[data-k="' + k + '"]');
   if (btn) { btn.classList.add('hit'); setTimeout(function () { btn.classList.remove('hit'); }, 120); }
-  if (k === 'del') { D.code = D.code.slice(0, -1); lockShow(); return; }
-  if (k === 'ok') { if (D.code.length === 4) tryCode(D.code); else lockMsg('네 자리를 모두 눌러 주세요'); return; }
+  if (k === 'del') { D.prefilled = false; D.code = D.code.slice(0, -1); lockShow(); return; }
+  if (k === 'ok') { if (D.free || D.code.length === 4) enterAtDoor(); else lockMsg('네 자리를 모두 눌러 주세요'); return; }
+  if (D.prefilled) { D.code = ''; D.prefilled = false; }
   if (D.code.length >= 4) return;
   D.code += k; lockShow(); if ($('lock').classList.contains('err')) lockMsg('암호 네 자리를 눌러요');
-  if (D.code.length === 4) setTimeout(function () { tryCode(D.code); }, 160);
+  if (D.code.length === 4) lockMsg('Enter를 누르거나 문 앞으로 걸어가요');
 }
 function openDoor(code, msg) {
   S.code = code; D.code = '0000'; lockShow(); lockMsg(msg || '띠리링~ 문이 열려요', 'ok');
-  D.phase = 'open'; D.bell = 1.2;
+  D.phase = 'open'; D.bell = 1.2; D.sx = D.mx; D.sy = D.my; D.keys = {}; D.target = null;
   ME = makeMe(S.lastName || '선생님');
   startCafe();
 }
@@ -1536,12 +1624,12 @@ function tryCode(code) {
     D.busy = false;
     if (res && res.ok) { keepCode(code); openDoor(code); return; }
     lockMsg(pick(['삐빅! 암호가 달라요', '삐빅! …안에서 쿠리만쥬 쌤이 고개를 젓는다', '삐빅! 교무실 공지를 다시 확인해 봐요']), 'err');
-    setTimeout(function () { D.code = ''; lockShow(); }, 700);
+    D.prefilled = false; setTimeout(function () { D.code = ''; lockShow(); }, 700);
   }).catch(function (e) { D.busy = false; D.code = ''; lockShow(); lockMsg('연결이 불안정해요. 다시 눌러 주세요', 'err'); });
 }
 function showDoor(msg) {
   var d = $('door'); d.hidden = false; d.classList.remove('bye');
-  D.on = true; D.phase = 'idle'; D.open = 0; D.walk = 0; D.code = ''; D.busy = false; lockShow(); lockMsg(msg || '암호 네 자리를 눌러요', msg ? 'err' : null);
+  D.on = true; D.phase = 'idle'; D.open = 0; D.walk = 0; D.code = ''; D.busy = false; D.prefilled = false; D.mx = null; D.keys = {}; lockShow(); lockMsg(msg || '암호 네 자리를 눌러요', msg ? 'err' : null);
   placeMe(); closePanel();
 }
 (function buildPad() {
@@ -1556,7 +1644,9 @@ addEventListener('keydown', function (e) {
   if (!D.on) return;
   if (e.key === 'Tab' || e.metaKey || e.ctrlKey || e.altKey) return;
   if (D.phase === 'idle') {
-    if (/^[0-9]$/.test(e.key)) press(e.key);
+    var mv = KEYMAP[e.key];
+    if (mv) { D.keys[mv] = true; D.target = null; }
+    else if (/^[0-9]$/.test(e.key)) press(e.key);
     else if (e.key === 'Backspace') press('del');
     else if (e.key === 'Enter') { if (e.target && e.target.id === 'lkKeep') return; press('ok'); }
     else if (e.key === 'Escape') { D.code = ''; lockShow(); }
@@ -1564,14 +1654,23 @@ addEventListener('keydown', function (e) {
   }
   e.preventDefault(); e.stopImmediatePropagation();
 }, true);
-// 기억된 암호가 있으면(또는 암호가 설정되지 않았으면) 바로 문이 열린다
-say('…문 잠겨 있어요. 암호 네 자리, 알죠? 교무실 공지에 있어요.', '도어락');
-(function autoEnter() {
+addEventListener('keyup', function (e) { if (D.on && KEYMAP[e.key]) D.keys[KEYMAP[e.key]] = false; }, true);
+// 거리 클릭: 그곳으로 걸어가고, 문을 누르면 문 앞으로
+dcv.addEventListener('click', function (e) {
+  if (D.phase !== 'idle') return;
+  var rc = dcv.getBoundingClientRect(), x = (e.clientX - rc.left) / rc.width * L.W, y = (e.clientY - rc.top) / rc.height * L.H, o = doorGeo();
+  if (Math.abs(x - o.dcx) < 20 && y > o.G - 62 && y < o.G + 4) D.target = { x: o.dcx, y: o.G + 1 };
+  else D.target = { x: clampN(x, 6, L.W - 6), y: clampN(y, o.G + 3, o.road - 3) };
+});
+// 기억한 암호는 미리 채워 두고, 들어가는 건 Enter나 문 앞으로 걸어가서
+say('…문 잠겨 있어요. 암호 네 자리를 누르고 Enter, 아니면 문 앞으로 걸어와요.', '도어락');
+(function prefill() {
   var c = savedCode();
   rawCall('enter', [c]).then(function (res) {
     if (!res || !res.ok) { if (c) forgetCode(); return; }
-    if (!res.locked) { openDoor('', '문이 열려 있어요. 어서 와요!'); return; }
-    D.code = c; lockShow(); lockMsg('기억한 암호로 여는 중…'); setTimeout(function () { openDoor(c); }, 500);
+    if (!res.locked) { D.free = true; lockMsg('문이 열려 있어요 · Enter 또는 문 앞으로'); return; }
+    if (D.phase !== 'idle' || D.code) return;
+    D.code = c; D.prefilled = true; lockShow(); lockMsg('기억한 암호가 들어 있어요 · Enter 또는 문 앞으로');
   }).catch(function () {});
 })();
 
