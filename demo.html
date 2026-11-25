@@ -229,7 +229,7 @@ footer button { font: inherit; background: none; border: 0; color: var(--muted);
         <div class="dt dwin" id="dWin2">&amp; DESSERT</div>
         <div class="dt dflag" id="dFlag1">C<br>O<br>F<br>F<br>E<br>E</div>
         <div class="dt dflag" id="dFlag2">커<br>피</div>
-        <div class="dt dhint" id="dHint" hidden>Enter ▶ 들어가기</div>
+        <div class="dt dhint" id="dHint" hidden>↑ 문 앞으로 가면 들어가요</div>
         <div class="dt dboard" id="dBoard"><b>珈琲</b><br>COFFEE</div>
         <div class="dt dvert" id="dVert">珈<br>琲</div>
         <div class="lock" id="lock" role="group" aria-label="카페 도어락. 암호 네 자리를 눌러 주세요.">
@@ -2336,7 +2336,8 @@ function streetMove(dt, o) {
 function enterAtDoor() {
   if (D.busy || D.phase !== 'idle') return;
   if (D.free) { openDoor('', '문이 열려 있어요. 어서 와요!'); return; }
-  if (D.code.length === 4) tryCode(D.code);
+  if (D.unlocked) { openDoor(S.code); return; }
+  if (D.code.length === 4) tryCode(D.code, true);
   else { lockMsg('도어락에 암호 네 자리를 먼저 눌러요', 'err'); say('…암호부터요. 네 자리.', '도어락'); }
 }
 function lockShow() {
@@ -2348,12 +2349,12 @@ function press(k) {
   if (!D.on || D.phase !== 'idle' || D.busy) return;
   var btn = $('lkPad').querySelector('[data-k="' + k + '"]');
   if (btn) { btn.classList.add('hit'); setTimeout(function () { btn.classList.remove('hit'); }, 120); }
-  if (k === 'del') { D.prefilled = false; D.code = D.code.slice(0, -1); lockShow(); return; }
-  if (k === 'ok') { if (D.free || D.code.length === 4) enterAtDoor(); else lockMsg('네 자리를 모두 눌러 주세요'); return; }
-  if (D.prefilled) { D.code = ''; D.prefilled = false; }
+  if (k === 'del') { D.prefilled = false; D.unlocked = false; D.code = D.code.slice(0, -1); lockShow(); return; }
+  if (k === 'ok') { if (D.free || D.unlocked) unlockedMsg(); else if (D.code.length === 4) tryCode(D.code, false); else lockMsg('네 자리를 모두 눌러 주세요'); return; }
+  if (D.prefilled || D.unlocked) { D.code = ''; D.prefilled = false; D.unlocked = false; }
   if (D.code.length >= 4) return;
   D.code += k; lockShow(); if ($('lock').classList.contains('err')) lockMsg('암호 네 자리를 눌러요');
-  if (D.code.length === 4) lockMsg('Enter를 누르거나 문 앞으로 걸어가요');
+  if (D.code.length === 4) lockMsg('Enter로 확인하거나 문 앞으로 걸어가요');
 }
 function openDoor(code, msg) {
   S.code = code; D.code = '0000'; lockShow(); lockMsg(msg || '띠리링~ 문이 열려요', 'ok');
@@ -2361,19 +2362,28 @@ function openDoor(code, msg) {
   ME = makeMe(S.lastName || '선생님');
   startCafe();
 }
-function tryCode(code) {
+function unlockedMsg() {
+  lockMsg('띠리링~ 잠금 해제! 문 앞으로 걸어가요', 'ok');
+  say('…열렸어요. 방향키로 문 앞까지 걸어와요.', '도어락');
+}
+// 암호 확인. andEnter가 아니면 잠금만 풀고(기억), 들어가는 건 문 앞까지 걸어가서
+function tryCode(code, andEnter) {
   if (D.busy || D.phase !== 'idle') return;
   D.busy = true; lockMsg('확인 중…');
   rawCall('enter', [code]).then(function (res) {
     D.busy = false;
-    if (res && res.ok) { keepCode(code); openDoor(code); return; }
+    if (res && res.ok) {
+      keepCode(code); S.code = code; D.unlocked = true; D.prefilled = false;
+      if (andEnter) openDoor(code); else unlockedMsg();
+      return;
+    }
     lockMsg(pick(['삐빅! 암호가 달라요', '삐빅! …안에서 쿠리만쥬 쌤이 고개를 젓는다', '삐빅! 교무실 공지를 다시 확인해 봐요']), 'err');
     D.prefilled = false; setTimeout(function () { D.code = ''; lockShow(); }, 700);
   }).catch(function (e) { D.busy = false; D.code = ''; lockShow(); lockMsg('연결이 불안정해요. 다시 눌러 주세요', 'err'); });
 }
 function showDoor(msg) {
   var d = $('door'); d.hidden = false; d.classList.remove('bye');
-  D.on = true; D.phase = 'idle'; D.open = 0; D.walk = 0; D.code = ''; D.busy = false; D.prefilled = false; D.mx = null; D.keys = {}; lockShow(); lockMsg(msg || '암호 네 자리를 눌러요', msg ? 'err' : null);
+  D.on = true; D.phase = 'idle'; D.open = 0; D.walk = 0; D.code = ''; D.busy = false; D.prefilled = false; D.unlocked = false; D.mx = null; D.keys = {}; lockShow(); lockMsg(msg || '암호 네 자리를 눌러요', msg ? 'err' : null);
   placeMe(); closePanel();
 }
 (function buildPad() {
@@ -2407,14 +2417,14 @@ dcv.addEventListener('click', function (e) {
   else D.target = { x: clampN(x, 6, L.W - 6), y: clampN(y, o.G + 3, o.road - 3) };
 });
 // 기억한 암호는 미리 채워 두고, 들어가는 건 Enter나 문 앞으로 걸어가서
-say('…문 잠겨 있어요. 암호 네 자리를 누르고 Enter, 아니면 문 앞으로 걸어와요.', '도어락');
+say('…문 잠겨 있어요. 암호 네 자리를 누르고, 방향키로 문 앞까지 걸어와요.', '도어락');
 (function prefill() {
   var c = savedCode();
   rawCall('enter', [c]).then(function (res) {
     if (!res || !res.ok) { if (c) forgetCode(); return; }
-    if (!res.locked) { D.free = true; lockMsg('문이 열려 있어요 · Enter 또는 문 앞으로'); return; }
+    if (!res.locked) { D.free = true; lockMsg('문이 열려 있어요 · 문 앞으로 걸어가요'); return; }
     if (D.phase !== 'idle' || D.code) return;
-    D.code = c; D.prefilled = true; lockShow(); lockMsg('기억한 암호가 들어 있어요 · Enter 또는 문 앞으로');
+    D.code = c; D.prefilled = true; lockShow(); lockMsg('기억한 암호가 들어 있어요 · 문 앞으로 걸어가요');
   }).catch(function () {});
 })();
 
