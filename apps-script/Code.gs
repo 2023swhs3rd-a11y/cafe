@@ -17,6 +17,14 @@ var CONFIG = {
   // 예약 불가 명단(노쇼 3회 등)을 적는 탭 이름. A열에 이름을 적으면 예약이 막힙니다. 탭이 없으면 무시.
   BLOCK_SHEET: '예약불가',
   APP_TITLE: '봉일천고 진로카페 ☕',
+  // 처음·오랜만 손님 권장 (예약 화면 안내 + 새 오픈일 우선 예약)
+  GUIDE: {
+    RECENT_DAYS: 4,      // '최근'으로 보는 지난 오픈일 수
+    REGULAR_MIN: 3,      // 최근 오픈일 중 이만큼 이상 오셨으면 '자주 오시는 분' → 양보 권유(막지는 않음)
+    PRIORITY_MAX: 1,     // 최근 오픈일 중 이만큼 이하로 오셨으면 우선 예약 가능
+    BACK_WEEKS: 4,       // 마지막 방문이 이만큼(주) 넘었으면 '오랜만'
+    PRIORITY_HOURS: 24   // 새 오픈일을 만든 뒤 이 시간 동안은 우선 예약 대상만 예약 가능. 0이면 끔
+  },
   // 카페 규칙: 앱의 '카페 규칙' 화면에 한 줄씩 보여 줍니다. 바꾸려면 이 목록만 고치세요.
   RULES: [
     '10분에 두 분씩만 받습니다',
@@ -92,6 +100,7 @@ var PUBLIC_ = {
   cancel: function (a, b, c) { return cancel_(a, b, c); },
   getMyHistory: function (a) { return getMyHistory_(a); },
   getMyCard: function (a) { return getMyCard_(a); },
+  guide: function (a, b) { return guide_(a, b); },
   adminLogin: function (a) { return adminLogin_(a); },
   adminCreateDay: function (a, b, c, d) { return adminCreateDay_(a, b, c, d); },
   adminGetDay: function (a, b) { return adminGetDay_(a, b); }
@@ -154,6 +163,11 @@ function reserve_(tabName, time, name, menu) {
     var day = parseSheet_(sh);
     checkCutoff_(day);
     if (!day.hasMenu) throw new Error('이 날짜는 메뉴 선택 양식이 아니라서 시트에서 직접 신청해 주세요.');
+    var until = priorityUntil_(tabName);
+    if (until && !profile_(name, readAllDays_()).eligible) {
+      throw new Error('지금은 처음·오랜만에 오시는 분 먼저 예약하는 시간이에요. ' +
+        Utilities.formatDate(new Date(until), CONFIG.TIMEZONE, 'M/d HH:mm') + '부터 예약할 수 있어요.');
+    }
 
     var mine = 0;
     day.slots.forEach(function (s) {
@@ -260,6 +274,48 @@ function getMyCard_(name) {
   } finally { maskName_ = saved; }
 }
 
+/* ---------------- 처음·오랜만 손님 권장 ---------------- */
+
+/** 이름으로 손님 유형 판단: new(처음) / back(오랜만) / regular(자주) / normal */
+function profile_(name, days) {
+  var n = normName_(name), G = CONFIG.GUIDE, today = todayKey_();
+  var past = days.filter(function (d) { return d.key < today; })
+    .sort(function (a, b) { return a.key < b.key ? 1 : -1; });
+  var visits = 0, lastKey = '', recent = 0;
+  past.forEach(function (d, i) {
+    var came = d.slots.some(function (s) { return s.seats.some(function (x) { return normName_(x.name) === n; }); });
+    if (!came) return;
+    visits++;
+    if (!lastKey) lastKey = d.key;
+    if (i < G.RECENT_DAYS) recent++;
+  });
+  var weeks = lastKey ? Math.floor((Date.parse(today) - Date.parse(lastKey)) / (7 * 86400000)) : 0;
+  var kind = !visits ? 'new' : weeks >= G.BACK_WEEKS ? 'back' : recent >= G.REGULAR_MIN ? 'regular' : 'normal';
+  return {
+    kind: kind, visits: visits, recent: recent, recentDays: Math.min(G.RECENT_DAYS, past.length), weeks: weeks,
+    eligible: kind === 'new' || kind === 'back' || recent <= G.PRIORITY_MAX
+  };
+}
+
+/** 새 오픈일 우선 예약이 끝나는 시각(ms). 우선 예약 중이 아니면 0 */
+function priorityUntil_(tab) {
+  var h = CONFIG.GUIDE.PRIORITY_HOURS;
+  if (!h) return 0;
+  var at = Number(PropertiesService.getScriptProperties().getProperty('OPEN_AT_' + tab) || 0);
+  if (!at) return 0;
+  var until = at + h * 3600000;
+  return until > Date.now() ? until : 0;
+}
+
+/** 예약 화면: 이름을 넣으면 손님 유형과 이 날짜 예약 가능 여부를 알려 줌 */
+function guide_(name, tab) {
+  if (!normName_(name)) return null;
+  var p = profile_(name, readAllDays_());
+  p.priorityUntil = tab ? priorityUntil_(tab) : 0;
+  p.canReserve = !p.priorityUntil || p.eligible;
+  return p;
+}
+
 /* ---------------- 시트 파싱 ---------------- */
 
 function readAllDays_() {
@@ -304,7 +360,7 @@ function parseSheet_(sh) {
 /** 클라이언트로 보낼 때: 시트처럼 예약자 이름을 그대로 보여 줌(예약 화면에서 서로 확인) */
 function publicDay_(d) {
   return {
-    tab: d.tab, key: d.key, label: d.label, hasMenu: d.hasMenu,
+    tab: d.tab, key: d.key, label: d.label, hasMenu: d.hasMenu, priorityUntil: priorityUntil_(d.tab),
     slots: d.slots.map(function (s) {
       return {
         time: s.time,
@@ -503,8 +559,8 @@ function createCafeDay_(yymmdd, start, end) {
   var ss = SpreadsheetApp.getActive();
   var date = new Date(2000 + Number(yymmdd.slice(0, 2)), Number(yymmdd.slice(2, 4)) - 1, Number(yymmdd.slice(4, 6)));
   if (isNaN(date.getTime()) || date.getMonth() !== Number(yymmdd.slice(2, 4)) - 1) throw new Error('존재하지 않는 날짜예요.');
-  var dow = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'][date.getDay_()];
-  var kdow = ['일', '월', '화', '수', '목', '금', '토'][date.getDay_()];
+  var dow = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'][date.getDay()];
+  var kdow = ['일', '월', '화', '수', '목', '금', '토'][date.getDay()];
   var tabName = yymmdd + '(' + dow + ')';
   if (ss.getSheetByName(tabName)) throw new Error('이미 같은 날짜 탭이 있어요: ' + tabName);
 
@@ -544,6 +600,8 @@ function createCafeDay_(yymmdd, start, end) {
     sh.getRange(first, 1, n, 1).setNumberFormat('@').setValues(times.map(function (x) { return [x]; }));
   }
   sh.getRange(first, 3, n, 4).clearContent();
+  // 우선 예약 시작 시각 기록 (CONFIG.GUIDE.PRIORITY_HOURS 동안 처음·오랜만 손님 먼저)
+  PropertiesService.getScriptProperties().setProperty('OPEN_AT_' + tabName, String(Date.now()));
   return tabName;
 }
 

@@ -161,6 +161,15 @@ table.rk .nk { display: block; font-size: 11px; color: var(--soft); }
 .rules li:last-child { border-bottom: 0; }
 .rules li::before { content: ''; position: absolute; left: 3px; top: 14px; width: 6px; height: 6px; background: var(--red); box-shadow: 1px 1px 0 var(--ink); }
 .err { color: var(--red); }
+.guide { border: 3px solid var(--ink); background: #fff8e6; padding: 8px 10px; margin: 8px 0 2px; font-size: 13px; line-height: 1.5; }
+.guide.new { background: #eaf7e4; } .guide.back { background: #e8f1fb; } .guide.reg { background: #fdf0dc; } .guide.wait { background: #f3ece4; }
+.guide b { display: block; margin-bottom: 2px; }
+.guide label { display: flex; gap: 6px; align-items: center; margin-top: 4px; cursor: pointer; }
+.guide input[type=checkbox] { -webkit-appearance: none; appearance: none; flex: none; width: 18px; height: 18px; margin: 0; border: 3px solid var(--ink); background: #fff; display: grid; place-content: center; cursor: pointer; }
+.guide input[type=checkbox]:checked { background: #3f7d3a; }
+.guide input[type=checkbox]:checked::after { content: ''; width: 4px; height: 8px; border: solid #fff; border-width: 0 3px 3px 0; transform: translateY(-1px) rotate(45deg); }
+.guide .row { margin-top: 6px; }
+.prio { border: 3px dashed #3f7d3a; background: #eaf7e4; padding: 6px 10px; margin: 6px 0; font-size: 12px; }
 .loading { text-align: center; padding: 14px; color: var(--soft); }
 footer { text-align: center; color: var(--muted); font-size: 11px; margin-top: 22px; }
 footer button { font: inherit; background: none; border: 0; color: var(--muted); text-decoration: underline; cursor: pointer; }
@@ -294,7 +303,7 @@ function api(fn) {
   });
 }
 var D = { on: true, phase: 'idle', code: '', open: 0, walk: 0, bell: 0, keys: {}, mx: null, my: 0, dir: 'right' }; // 입구 상태
-var S = { code: '', data: null, day: null, slot: null, menu: null, admin: null, lastName: '' };
+var S = { code: '', data: null, day: null, slot: null, menu: null, admin: null, lastName: '', guide: null };
 try { S.lastName = localStorage.getItem('jinro.name') || ''; } catch (e) {}
 var $ = function (id) { return document.getElementById(id); };
 function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
@@ -1087,10 +1096,12 @@ function renderReserve() {
   var d = S.data, body = $('reserveBody');
   if (!d.openDays.length) { body.innerHTML = '<p>아직 열린 날이 없어요. 원두 볶는 중…<br><span class="hint">오픈일이 정해지면 여기에 나타나요.</span></p>'; return; }
   if (!S.day) S.day = d.openDays[0];
-  var h = '<p class="hint">① 성함 (본인만, 대리 입력 불가)</p><input class="in" id="rName" placeholder="성함" maxlength="10" value="' + esc(S.lastName) + '" autocomplete="name">';
+  var h = '<p class="hint">① 성함 (본인만, 대리 입력 불가)</p><input class="in" id="rName" placeholder="성함" maxlength="10" value="' + esc(S.lastName) + '" autocomplete="name"><div id="rGuide"></div>';
   h += '<p class="hint">② 날짜</p><div class="row">';
-  d.openDays.forEach(function (day, i) { h += '<button class="b ' + (S.day.tab === day.tab ? 'on' : '') + '" data-day="' + i + '">' + esc(day.label) + ' · ' + freeSeats(day) + '석</button>'; });
-  h += '</div><p class="hint">③ 시간 · 지금까지 예약하신 분 (빈자리가 있는 줄을 누르면 그 시간으로)</p><div class="slots2">';
+  d.openDays.forEach(function (day, i) { h += '<button class="b ' + (S.day.tab === day.tab ? 'on' : '') + '" data-day="' + i + '">' + (prioActive(day) ? '🌱 ' : '') + esc(day.label) + ' · ' + freeSeats(day) + '석</button>'; });
+  h += '</div>';
+  if (prioActive(S.day)) h += '<div class="prio">🌱 <b>새 얼굴 우선 예약 중</b> · ' + esc(whenLabel(S.day.priorityUntil)) + '까지는 처음 오시거나 최근에 많이 못 오신 분 먼저 예약해요. 그 뒤엔 모두 예약할 수 있어요.</div>';
+  h += '<p class="hint">③ 시간 · 지금까지 예약하신 분 (빈자리가 있는 줄을 누르면 그 시간으로)</p><div class="slots2">';
   var me = (S.lastName || '').replace(/\s+/g, '');
   S.day.slots.forEach(function (s, i) {
     var free = s.seats.filter(function (x) { return !x.taken; }).length;
@@ -1114,7 +1125,56 @@ function renderReserve() {
   $('rGo').onclick = doReserve;
   var rn = $('rName');
   rn.oninput = function () { S.lastName = rn.value.trim(); };
-  rn.onchange = function () { S.lastName = rn.value.trim(); renderReserve(); if (S.lastName) say(S.lastName + ' 선생님. ' + pick(['…기억해 둘게요.', '이름 예쁘네요. …흥.', '노란 칸이 선생님 예약이에요.'])); };
+  rn.onchange = function () { S.lastName = rn.value.trim(); renderReserve(); };
+  renderGuide();
+}
+/* 처음·오랜만 손님 권장: 이름을 넣으면 손님 유형에 맞는 안내 */
+function prioActive(day) { return !!(day && day.priorityUntil && day.priorityUntil > Date.now()); }
+function whenLabel(ms) { var t = new Date(ms + 9 * 3600000); return (t.getUTCMonth() + 1) + '/' + t.getUTCDate() + ' ' + ('0' + t.getUTCHours()).slice(-2) + ':' + ('0' + t.getUTCMinutes()).slice(-2); } // 한국 시간
+function guideKey() { return (S.lastName || '').replace(/\s+/g, '') + '|' + (S.day ? S.day.tab : ''); }
+function renderGuide() {
+  var box = $('rGuide'); if (!box) return;
+  if (!S.lastName) { box.innerHTML = ''; return; }
+  var key = guideKey(), g = S.guide;
+  if (!g || g.key !== key) {
+    box.innerHTML = '<p class="hint">손님 기록 찾는 중…</p>';
+    api('guide', S.lastName, S.day.tab).then(function (r) {
+      if (guideKey() !== key || !r) return;
+      S.guide = { key: key, r: r, agree1: false, agree2: false, ack: false };
+      renderGuide();
+      if (S.guideSaid !== key.split('|')[0]) { S.guideSaid = key.split('|')[0]; say(guideLine(r)); }
+    }).catch(function () { box.innerHTML = ''; });
+    return;
+  }
+  var r = g.r, h = '';
+  if (!r.canReserve) {
+    h = '<div class="guide wait"><b>🌱 지금은 새 얼굴 먼저예요</b>최근 ' + r.recentDays + '번 중 ' + r.recent + '번 오셨어요. 고마워요! 이 날은 <b style="display:inline">' + esc(whenLabel(r.priorityUntil)) + '</b>부터 예약할 수 있어요. 다른 날짜는 지금 바로 예약돼요.</div>';
+  } else if (r.kind === 'new') {
+    h = '<div class="guide new"><b>🎉 첫 방문 환영해요!</b>처음이시니 두 가지만 약속해 주세요.' +
+      '<label><input type="checkbox" id="gA1"' + (g.agree1 ? ' checked' : '') + '> 깨끗한 텀블러를 챙겨 올게요</label>' +
+      '<label><input type="checkbox" id="gA2"' + (g.agree2 ? ' checked' : '') + '> 예약한 시간에 맞춰 올게요 (지나면 응대가 어려워요)</label></div>';
+  } else if (r.kind === 'back') {
+    h = '<div class="guide back"><b>👋 오랜만이에요!</b>' + r.weeks + '주 만이에요. 다시 와 주셔서 반가워요.' + (prioActive(S.day) ? ' 이 날은 우선 예약 대상이에요.' : '') + '</div>';
+  } else if (r.kind === 'regular') {
+    h = g.ack ? '<div class="guide reg"><b>☕ 단골 선생님</b>알겠어요, 예약 이어서 해요. 늘 와 주셔서 고마워요.</div>'
+      : '<div class="guide reg"><b>☕ 단골 선생님, 부탁 하나만요</b>최근 ' + r.recentDays + '번 중 ' + r.recent + '번 오셨어요. 이번엔 처음 오시는 분께 자리를 양보해 주실래요? 강제는 아니에요.' +
+        '<div class="row"><button class="b" id="gYield">이번엔 양보할게요</button><button class="b" id="gAck">그래도 예약할래요</button></div></div>';
+  } else if (prioActive(S.day)) {
+    h = '<div class="guide back"><b>🌱 우선 예약 대상이에요</b>최근에 자주 못 오셨네요. 이 날은 먼저 예약할 수 있어요.</div>';
+  }
+  box.innerHTML = h;
+  var a1 = $('gA1'), a2 = $('gA2');
+  if (a1) a1.onchange = function () { g.agree1 = a1.checked; };
+  if (a2) a2.onchange = function () { g.agree2 = a2.checked; };
+  if ($('gAck')) $('gAck').onclick = function () { g.ack = true; renderGuide(); say('…흥, 알겠어요. 오는 건 언제나 환영이에요.'); };
+  if ($('gYield')) $('gYield').onclick = function () { S.slot = null; S.menu = null; renderReserve(); say(pick(['…고마워요. 그 마음, 기억해 둘게요.', '양보 접수. 다음에 맛있게 내려 줄게요.', '역시 단골은 달라요. …칭찬 아니에요.'])); };
+}
+function guideLine(r) {
+  if (!r.canReserve) return '…이 날은 새 얼굴들 먼저예요. 조금만 기다려 줘요.';
+  if (r.kind === 'new') return pick(['처음이죠? …긴장 안 해도 돼요. 제가 맛있게 내려 줄게요.', '첫 손님이네요. 어서 와요, 환영해요.']);
+  if (r.kind === 'back') return pick(['…오랜만이에요. 안 오는 줄 알았잖아요.', '어, 오랜만! …보고 싶었던 건 아니에요.']);
+  if (r.kind === 'regular') return '또 왔어요? …고마운데, 오늘은 새 손님한테 양보해 줄래요?';
+  return S.lastName + ' 선생님. ' + pick(['…기억해 둘게요.', '노란 칸이 선생님 예약이에요.']);
 }
 function keepName() { var n = $('rName'); if (n) S.lastName = n.value.trim(); }
 function replaceDay(day) {
@@ -1127,6 +1187,10 @@ function doReserve() {
   if (!S.slot) return say('시간부터 골라요.');
   if (!name) return say('성함 알려 줘야 컵에 이름 쓰죠.');
   if (!S.menu) return say('메뉴는요? 오늘은 뭐가 당겨요?');
+  var g = S.guide && S.guide.key === guideKey() ? S.guide : null;
+  if (g && !g.r.canReserve) return say('…이 날은 ' + whenLabel(g.r.priorityUntil) + '부터예요. 다른 날은 지금 돼요.');
+  if (g && g.r.kind === 'new' && !(g.agree1 && g.agree2)) return say('처음이니까 약속 두 개만 체크해 줘요. 텀블러, 시간.');
+  if (g && g.r.kind === 'regular' && !g.ack) return say('위에 부탁 하나 있어요. 양보할지, 그래도 예약할지 골라 줘요.');
   var btn = $('rGo'); btn.disabled = true; btn.textContent = '주문 넣는 중…'; say('주문 받았어요. 잠깐만요.');
   api('reserve', S.day.tab, S.slot, name, S.menu).then(function (res) {
     try { localStorage.setItem('jinro.name', name); } catch (e) {}
@@ -1138,7 +1202,7 @@ function doReserve() {
       '<div class="r"><span>방문 도장</span><span>' + '★'.repeat(Math.min(res.visits, 10)) + (res.visits > 10 ? '+' : '') + '</span></div>' +
       '<div style="text-align:center;margin-top:6px">*깨끗한* 텀블러 지참!</div></div>';
     var c = L.counter; bubbleAt(c.x + c.w / 2 - 2, c.y - 24, pick(['주문 들어왔어요!', '…예약 완료.', name + ' 선생님, 기억했어요.']), true);
-    S.slot = null; S.menu = null; renderReserve(); $('rResult').innerHTML = rc; confetti();
+    S.slot = null; S.menu = null; S.guide = null; renderReserve(); $('rResult').innerHTML = rc; confetti();
     say('예약 완료. ' + visitLine(res.visits) + '\n' + res.day.label + ', 그 시간에 꼭 와요.');
   }).catch(function (e) {
     btn.disabled = false; btn.textContent = '주문 넣기'; say('…앗. ' + e.message);
@@ -1236,7 +1300,7 @@ function renderAdmin() {
   }
   var times = []; for (var t = 7 * 60; t <= 17 * 60; t += 10) times.push(Math.floor(t / 60) + ':' + ('0' + t % 60).slice(-2));
   var opt = function (sel) { return times.map(function (x) { return '<option' + (x === sel ? ' selected' : '') + '>' + x + '</option>'; }).join(''); };
-  b.innerHTML = '<h3>새 오픈일 만들기</h3><p class="hint">가장 최근 날짜 탭을 양식으로 복사해 새 탭을 만들어요. 기존 탭은 건드리지 않아요.</p>' +
+  b.innerHTML = '<h3>새 오픈일 만들기</h3><p class="hint">가장 최근 날짜 탭을 양식으로 복사해 새 탭을 만들어요. 기존 탭은 건드리지 않아요.<br>🌱 만든 뒤 24시간은 처음·오랜만에 오시는 분 먼저 예약할 수 있어요.</p>' +
     '<form class="row" id="newDay"><label>날짜 <input class="in" type="date" id="ndDate" required></label><label>시작 <select class="in" id="ndStart">' + opt('8:30') + '</select></label><label>끝 <select class="in" id="ndEnd">' + opt('10:50') + '</select></label><button class="b go" type="submit">오픈!</button></form><div id="ndMsg"></div>' +
     '<h3>예약 현황 (실명)</h3><div class="row">' + S.data.openDays.map(function (d, i) { return '<button class="b" data-adm="' + i + '">' + esc(d.label) + '</button>'; }).join('') + '</div><div id="admDay"></div>';
   $('newDay').onsubmit = function (e) {
